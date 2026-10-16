@@ -43,20 +43,29 @@ int main(){
         io_uring_wait_cqe(&ring,&cqe);
         if(!cqe) return err("wait failed");
 
+        if(cqe->res<0){
+            printf("%s\n",strerror(-cqe->res));
+            continue;
+        }
+
         if(cqe->user_data == QLEN){
+            struct io_uring_sqe *sqeAccept=io_uring_get_sqe(&ring);
+            io_uring_prep_accept(sqeAccept,server_fd,NULL,NULL,0);
+            io_uring_sqe_set_data(sqeAccept,(void*)(intptr_t)QLEN);
+
             struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
             fds[i]=cqe->res;
             io_uring_prep_read(sqe,fds[i],buffers[i],1024,0);
             io_uring_sqe_set_data(sqe,(void*)(intptr_t)i);
             i=(i+1)%(2*QLEN);
-
-            struct io_uring_sqe *sqeAccept=io_uring_get_sqe(&ring);
-            io_uring_prep_accept(sqeAccept,server_fd,NULL,NULL,0);
-            io_uring_sqe_set_data(sqe,(void*)(intptr_t)QLEN);
         }else if(cqe->user_data < QLEN){
             struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
             io_uring_prep_write(sqe,fds[cqe->user_data],buffers[cqe->user_data],1024,0);
             io_uring_sqe_set_data(sqe,(void*)(intptr_t)(QLEN+1));
+        }else{
+            struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
+            io_uring_prep_read(sqe,fds[sqe->user_data],buffers[sqe->user_data],1024,0);
+            io_uring_sqe_set_data(sqe,(void*)sqe->user_data);
         }
         io_uring_cqe_seen(&ring,cqe);
         io_uring_submit(&ring);
