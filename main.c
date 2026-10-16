@@ -17,15 +17,19 @@ typedef enum {
 
 typedef struct{
     requesttype type;
-    int client_fd;
 } request;
 
 struct io_uring ring;
 int server_fd;
 char ignore[1024];
+request buf[1<<16];
+
+int get_client_fd(request*r){
+    return r-buf;
+}
 
 void add_accept_to_ring(){
-    request*r=malloc(sizeof(request));
+    request*r=buf;
     r->type=ACCEPT;
     struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
     io_uring_prep_accept(sqe,server_fd,NULL,NULL,0);
@@ -34,21 +38,21 @@ void add_accept_to_ring(){
 
 void add_close_to_ring(request*r){
     struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
-    io_uring_prep_close(sqe,r->client_fd);
+    io_uring_prep_close(sqe,get_client_fd(r));
     r->type=CLOSE;
     io_uring_sqe_set_data(sqe,r);
 }
 
 void add_write_to_ring(request*r){
     struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
-    io_uring_prep_write(sqe,r->client_fd,"pong\0",5,0);
+    io_uring_prep_write(sqe,get_client_fd(r),"pong\0",5,0);
     r->type=WRITE;
     io_uring_sqe_set_data(sqe,r);
 }
 
 void add_read_to_ring(request*r){
     struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
-    io_uring_prep_read(sqe,r->client_fd,ignore,1024,0);
+    io_uring_prep_read(sqe,get_client_fd(r),ignore,1024,0);
     r->type=READ;
     io_uring_sqe_set_data(sqe,r);
 }
@@ -82,6 +86,7 @@ int main(){
         request*r=(request*)cqe->user_data;
 
         if(cqe->res<0){
+            printf("%s\n",strerror(-cqe->res));
             switch(r->type){
                 case ACCEPT:
                     add_accept_to_ring();
@@ -91,14 +96,12 @@ int main(){
                     add_close_to_ring(r);
                     break;
                 case CLOSE:
-                    free(r);
             }
         }else{
             switch(r->type){
                 case ACCEPT:
                     add_accept_to_ring();
-                    r->client_fd=cqe->res;
-                    add_write_to_ring(r);
+                    add_write_to_ring(&(buf[cqe->res]));
                     break;
                 case WRITE:
                 case READ:
