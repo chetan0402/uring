@@ -42,7 +42,7 @@ void add_close_to_ring(request*r){
 void add_write_to_ring(request*r){
     struct io_uring_sqe *sqe=io_uring_get_sqe(&ring);
     io_uring_prep_write(sqe,r->client_fd,"pong\0",5,0);
-    r->type=READ;
+    r->type=WRITE;
     io_uring_sqe_set_data(sqe,r);
 }
 
@@ -81,8 +81,7 @@ int main(){
 
         request*r=(request*)cqe->user_data;
 
-        if(cqe->res<=0){
-            if(cqe->res<0) printf("%s\n",strerror(-cqe->res));
+        if(cqe->res<0){
             switch(r->type){
                 case ACCEPT:
                     add_accept_to_ring();
