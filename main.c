@@ -80,39 +80,46 @@ int main(){
 
     while(true){
         struct io_uring_cqe *cqe;
-        io_uring_wait_cqe(&ring,&cqe);
-        if(!cqe) return err("wait failed");
+        int ret=io_uring_submit_and_wait(&ring,1);
+        if(ret<0) return err("wait failed");
 
-        request*r=(request*)cqe->user_data;
+        unsigned head;
+        unsigned count=0;
 
-        if(cqe->res<0){
-            printf("%s\n",strerror(-cqe->res));
-            switch(r->type){
-                case ACCEPT:
-                    add_accept_to_ring();
-                    break;
-                case READ:
-                case WRITE:
-                    add_close_to_ring(r);
-                    break;
-                case CLOSE:
+        io_uring_for_each_cqe(&ring,head,cqe){
+            request*r=(request*)cqe->user_data;
+
+            if(cqe->res<0){
+                printf("%s\n",strerror(-cqe->res));
+                switch(r->type){
+                    case ACCEPT:
+                        add_accept_to_ring();
+                        break;
+                    case READ:
+                    case WRITE:
+                        add_close_to_ring(r);
+                        break;
+                    case CLOSE:
+                }
+            }else{
+                switch(r->type){
+                    case ACCEPT:
+                        add_accept_to_ring();
+                        add_read_to_ring(&(buf[cqe->res]));
+                        break;
+                    case WRITE:
+                        add_read_to_ring(r);
+                        break;
+                    case READ:
+                        if(cqe->res==0) add_close_to_ring(r);
+                        else add_write_to_ring(r);
+                }
             }
-        }else{
-            switch(r->type){
-                case ACCEPT:
-                    add_accept_to_ring();
-                    add_read_to_ring(&(buf[cqe->res]));
-                    break;
-                case WRITE:
-                    add_read_to_ring(r);
-                    break;
-                case READ:
-                    if(cqe->res==0) add_close_to_ring(r);
-                    else add_write_to_ring(r);
-            }
+
+            count++;
         }
-        io_uring_cqe_seen(&ring,cqe);
-        io_uring_submit(&ring);
+
+        if(count) io_uring_cq_advance(&ring,count);
     }
     io_uring_queue_exit(&ring);
     return 0;
