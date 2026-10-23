@@ -101,11 +101,14 @@ int main(){
             switch(r->type){
                 case ACCEPT:
                     add_accept_to_ring();
-                    add_write_to_ring(&(buf[cqe->res]));
+                    add_read_to_ring(&(buf[cqe->res]));
                     break;
                 case WRITE:
+                    add_read_to_ring(r);
+                    break;
                 case READ:
-                    add_close_to_ring(r);
+                    if(cqe->res==0) add_close_to_ring(r);
+                    else add_write_to_ring(r);
             }
         }
         io_uring_cqe_seen(&ring,cqe);
